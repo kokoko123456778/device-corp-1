@@ -88,6 +88,15 @@ void fillRound(SDL_Rect r, int rad, Col c) {
     fillCircle(r.x + rad, r.y + r.h - rad - 1, rad, c);
     fillCircle(r.x + r.w - rad - 1, r.y + r.h - rad - 1, rad, c);
 }
+// Вертикальный градиент (для фонов)
+void fillGradV(SDL_Rect r, Col top, Col bot) {
+    for (int i = 0; i < r.h; ++i) {
+        double t = r.h > 1 ? (double)i / (r.h - 1) : 0.0;
+        Col c = {(Uint8)(top.r + (int)((bot.r - top.r) * t)), (Uint8)(top.g + (int)((bot.g - top.g) * t)),
+                 (Uint8)(top.b + (int)((bot.b - top.b) * t)), 255};
+        fillRect(r.x, r.y + i, r.w, 1, c);
+    }
+}
 bool inRect(int x, int y, const SDL_Rect& r) { return x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + r.h; }
 
 // ============================================================================
@@ -287,6 +296,14 @@ std::string fitText(const std::string& s, int sc, int maxw) {
 }
 void drawTextC(const std::string& s, int cx, int y, int sc, Col c) { drawText(s, cx - textW(s, sc) / 2, y, sc, c); }
 void drawTextR(const std::string& s, int rx, int y, int sc, Col c) { drawText(s, rx - textW(s, sc), y, sc, c); }
+// Текст с тенью: заголовки выглядят объёмнее
+void drawTextShadow(const std::string& t, int x, int y, int sc, Col c) {
+    drawText(t, x + sc, y + sc, sc, shade(C_BG, 0.4));
+    drawText(t, x, y, sc, c);
+}
+void drawTextCShadow(const std::string& t, int cx, int y, int sc, Col c) {
+    drawTextShadow(t, cx - textW(t, sc) / 2, y, sc, c);
+}
 
 std::string fmtNum(double v) {
     long long n = (long long)std::llround(std::fabs(v));
@@ -465,9 +482,10 @@ bool button(const SDL_Rect& r, const std::string& label, bool enabled = true, bo
     bool hov = hovered(r);
     Col c = !enabled ? C_BTND : (sel ? C_BTNSEL : (hov ? C_BTNH : C_BTN));
     if (enabled && hov && U.mdown && !U.dragging) c = shade(C_BTNSEL, 0.8);
-    fillRect(r, c);
-    fillRect(r.x, r.y, r.w, 2, shade(c, 1.35));
-    drawRect(r, shade(c, 0.7));
+    if (enabled) fillRound({r.x, r.y + 3, r.w, r.h}, 8, shade(C_BG, 0.55));   // тень
+    fillRound(r, 8, shade(c, 0.7));                                             // нижний край
+    fillRound({r.x + 1, r.y + 1, r.w - 2, r.h - 3}, 7, c);                      // тело
+    fillRect(r.x + 10, r.y + 2, r.w - 20, 1, shade(c, 1.5));                    // блик
     std::string t = fitText(label, sc, r.w - 12);
     drawTextC(t, r.x + r.w / 2, r.y + (r.h - 7 * sc) / 2, sc, enabled ? C_TEXT : C_DIM);
     drawFocus(r);
@@ -589,15 +607,17 @@ void uiEndFrame() {
 }
 
 void panel(int x, int y, int w, int h, const std::string& title) {
-    SDL_Rect r = {x, y, w, h};
-    fillRect(r, C_PANEL);
-    drawRect(r, C_BORDER);
-    if (!title.empty()) drawText(title, x + 12, y + 10, 2, C_ACC);
+    fillRound({x + 4, y + 6, w, h}, 12, shade(C_BG, 0.5));          // тень
+    fillRound({x, y, w, h}, 12, C_BORDER);                          // рамка
+    fillRound({x + 1, y + 1, w - 2, h - 2}, 11, C_PANEL);           // тело
+    fillRect(x + 12, y + 1, w - 24, 1, shade(C_PANEL, 1.4));        // блик
+    if (!title.empty()) drawTextShadow(title, x + 16, y + 12, 2, C_ACC);
 }
 void progressBar(SDL_Rect r, double f, Col c) {
-    fillRect(r, C_PANEL2);
-    fillRect(r.x, r.y, (int)(r.w * clampd(f, 0, 1)), r.h, c);
-    drawRect(r, C_BORDER);
+    fillRound(r, r.h / 2, C_PANEL2);
+    int fw = (int)(r.w * clampd(f, 0, 1));
+    if (fw > 0) fillRound({r.x, r.y, std::max(r.h, fw), r.h}, r.h / 2, c);
+    fillRect(r.x + r.h / 2, r.y + 1, std::max(0, r.w - r.h), 1, shade(C_PANEL2, 1.5));
 }
 
 // ============================================================================
@@ -711,8 +731,11 @@ const char* FIRST_NAMES[16] = {"Алексей", "Мария", "Иван",   "О
                                "Никита",  "Юлия",  "Артём",  "Дарья", "Павел",   "Ксения", "Игорь", "Вера"};
 const char* INITIALS[12] = {"А.", "Б.", "В.", "Г.", "Д.", "К.", "Л.", "М.", "Н.", "П.", "С.", "Т."};
 
-const int NCOMP = 5;
-const char* COMP_NAMES[NCOMP] = {"Грушафон", "СуперЛаб", "Восток-Электро", "НеоТек", "ПиксельКо"};
+const int NCOMP = 20;
+const char* COMP_NAMES[NCOMP] = {
+    "Грушафон", "СуперЛаб", "Восток-Электро", "НеоТек", "ПиксельКо", "Альфа-Радио", "Звёздный Ток",
+    "ТрансКонтур", "Северный Вектор", "Кварц-Плюс", "Орбита", "Ритм-Тех", "Светозар", "Глобал-Чип",
+    "Меридиан", "Электрон-Пром", "Дельта-Лаб", "Ампер", "Зенит-Электро", "Сигма-Тек"};
 const char* MONTHS[12] = {"Январь", "Февраль", "Март",     "Апрель",  "Май",    "Июнь",
                           "Июль",   "Август",  "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"};
 const char* MONTHS_S[12] = {"Янв", "Фев", "Мар", "Апр", "Май", "Июн", "Июл", "Авг", "Сен", "Окт", "Ноя", "Дек"};
@@ -808,6 +831,9 @@ struct Product {
     std::vector<int> weekly;
 };
 
+// Награда: владелец -1 — игрок, 0..NCOMP-1 — конкурент
+struct Award { std::string title, winner, detail; int year = 0; int owner = -1; };
+
 struct Game {
     std::string company = "Девайс-Корп";
     double money = 150000, rep = 5, fans = 0;
@@ -830,13 +856,15 @@ struct Game {
     int gen[NCAT] = {0, 0, 0, 0, 0};
     double comp[NCOMP] = {900, 650, 420, 260, 140};
     std::vector<std::string> log;
+    double rivalProfit[NCOMP] = {};   // прибыль конкурентов за текущий год
+    std::vector<Award> awardLog;      // история наград
 };
 Game G;
 
 // ---------------------------------------------------------------------------
 //  Экранное состояние
 // ---------------------------------------------------------------------------
-enum Screen { SC_NEW, SC_MAIN, SC_DESIGN, SC_LAUNCH, SC_OFFICE, SC_RESEARCH, SC_MARKET, SC_STATS, SC_PAUSE, SC_OVER, SC_PLATFORM };
+enum Screen { SC_NEW, SC_MAIN, SC_DESIGN, SC_LAUNCH, SC_OFFICE, SC_RESEARCH, SC_MARKET, SC_STATS, SC_PAUSE, SC_OVER, SC_PLATFORM, SC_AWARDS, SC_HALL };
 Screen screen = SC_NEW, retScreen = SC_MAIN;
 std::string toastMsg;
 float toastT = 0;
@@ -998,6 +1026,7 @@ void newGame(const std::string& name, int capIdx) {
     G = Game();
     PRJ_CPU = Proj();
     PRJ_OS = Proj();
+    for (int i = 0; i < NCOMP; ++i) G.comp[i] = 900.0 * std::pow(0.85, i) * (0.9 + 0.2 * frand());
     OS_OPT[1].q = 0;
     CPUSRC_OPT[1].q = 0;
     G.company = name.empty() ? "Девайс-Корп" : name;
@@ -1031,6 +1060,7 @@ void monthEnd() {
     refreshCandidates();
     G.rep = std::max(0.0, G.rep * 0.985);
     for (int i = 0; i < NCOMP; ++i) G.comp[i] *= 1.0 + 0.01 + 0.02 * frand();
+    for (int i = 0; i < NCOMP; ++i) G.rivalProfit[i] += G.comp[i] * 6.0 * (0.6 + 0.8 * frand());
     if (G.money < 0) {
         G.negMonths++;
         if (G.negMonths >= 3) {
@@ -1047,12 +1077,97 @@ void monthEnd() {
     }
 }
 
+
+std::vector<Award> yearAwards;
+int awardYearNo = 0;
+float ceremonyT = 0.0f;  // время церемонии награждения, сек
+
+// Оценка лучшей новинки конкурента i в категории c
+double rivalRating(int i, int y) { return clampd(3.0 + 5.0 * frand() + G.comp[i] / 300.0 + y * 0.1, 1, 10); }
+bool catOpenNow(int c) { return c < 2 || calYear() >= TECHS[(size_t)techCat[c]].year; }
+
+void computeAwards(int y) {  // y — номер нового года от старта; награждаем прошедший
+    yearAwards.clear();
+    ceremonyT = 0.0f;
+    awardYearNo = START_YEAR + y - 1;
+    const int from = (y - 1) * 360, to = y * 360;
+    const char* titles[NCAT] = {"Лучший радиоприёмник года", "Лучший телефон года", "Лучшие часы года",
+                                "Лучший калькулятор года", "Лучший компьютер года"};
+    auto add = [&](const char* title, const std::string& winner, int owner, const std::string& detail) {
+        Award a;
+        a.title = title; a.winner = winner; a.detail = detail; a.year = awardYearNo; a.owner = owner;
+        yearAwards.push_back(a);
+        G.awardLog.push_back(a);
+    };
+
+    // Лучшая компания: прибыль за последние 12 месяцев у игрока и за год у конкурентов
+    double profit = 0;
+    int n = (int)G.histInc.size();
+    for (int i = std::max(0, n - 12); i < n; ++i) profit += G.histInc[(size_t)i] - G.histExp[(size_t)i];
+    double top = profit;
+    std::string topName = G.company;
+    int topOwner = -1;
+    for (int i = 0; i < NCOMP; ++i)
+        if (G.rivalProfit[i] > top) { top = G.rivalProfit[i]; topName = COMP_NAMES[i]; topOwner = i; }
+    if (top > 0)
+        add("Лучшая компания года", topName, topOwner, "Прибыль за год " + fmtMoney(top));
+
+    // Лучшее устройство в каждой открытой категории: игрок против конкурентов
+    for (int c = 0; c < NCAT; ++c) {
+        if (!catOpenNow(c)) continue;
+        double bestR = -1;
+        std::string bn, bd;
+        int owner = -1;
+        for (size_t i = 0; i < G.products.size(); ++i) {
+            const Product& p = G.products[i];
+            if (p.cat != c || p.launchDay < from || p.launchDay >= to) continue;
+            if (p.rating > bestR) {
+                bestR = p.rating; bn = p.name; owner = -1;
+                bd = "Оценка " + fmt1(p.rating) + ", продано " + fmtNum(p.units) + " шт.";
+            }
+        }
+        for (int i = 0; i < NCOMP; ++i) {
+            double r = rivalRating(i, y);
+            if (r > bestR) {
+                bestR = r; owner = i;
+                bn = std::string(COMP_NAMES[i]) + " " + CATS[c].series + " " + SUFFIX[(i + c) % 10];
+                bd = "Оценка " + fmt1(r);
+            }
+        }
+        if (bestR >= 0) add(titles[c], bn, owner, bd);
+    }
+
+    // Самое продаваемое устройство: игрок против конкурентов
+    double bu = -1;
+    std::string bsn, bsd;
+    int bsOwner = -1;
+    for (size_t i = 0; i < G.products.size(); ++i) {
+        const Product& p = G.products[i];
+        if (p.launchDay < from || p.launchDay >= to) continue;
+        if (p.units > bu) { bu = p.units; bsn = p.name; bsOwner = -1; bsd = "Продано " + fmtNum(p.units) + " шт."; }
+    }
+    for (int i = 0; i < NCOMP; ++i) {
+        double u = G.comp[i] * 200.0 * (0.5 + frand());
+        if (u > bu) {
+            bu = u; bsOwner = i;
+            bsn = std::string(COMP_NAMES[i]) + " " + CATS[0].series + " " + SUFFIX[i % 10];
+            bsd = "Продано " + fmtNum(u) + " шт.";
+        }
+    }
+    if (bu >= 0) add("Самое продаваемое устройство года", bsn, bsOwner, bsd);
+
+    // Годовая прибыль конкурентов начинается заново
+    for (int i = 0; i < NCOMP; ++i) G.rivalProfit[i] = 0;
+}
+
 void announceYear(int y) {
     std::string first;
     int cnt = 0;
     for (size_t i = 0; i < TECHS.size(); ++i)
         if (TECHS[i].year == START_YEAR + y) { if (cnt == 0) first = TECHS[i].name; ++cnt; }
     logMsg("Наступил " + std::to_string(START_YEAR + y) + " год. Новых технологий: " + std::to_string(cnt));
+    computeAwards(y);
+    setScreen(SC_AWARDS);
     if (cnt > 0) toast("Новое в мире: " + first);
     sfx(SFX_DONE);
 }
@@ -1251,6 +1366,15 @@ bool saveGame() {
     }
     o << G.log.size() << '\n';
     for (size_t i = 0; i < G.log.size(); ++i) o << G.log[i] << '\n';
+    for (int i = 0; i < NCOMP; ++i) o << G.rivalProfit[i] << ' ';
+    o << '\n' << G.awardLog.size() << '\n';
+    for (size_t i = 0; i < G.awardLog.size(); ++i) {
+        const Award& a = G.awardLog[i];
+        o << a.year << ' ' << a.owner;
+        wstr(o, a.title);
+        wstr(o, a.winner);
+        wstr(o, a.detail);
+    }
     std::string data = o.str();
     SDL_RWops* f = SDL_RWFromFile(savePath.c_str(), "wb");
     if (!f) return false;
@@ -1346,6 +1470,15 @@ bool loadGame() {
         std::string s;
         if (!rstr(is, s)) break;
         g.log.push_back(s);
+    }
+    for (int i = 0; i < NCOMP; ++i) is >> g.rivalProfit[i];
+    size_t na = 0;
+    is >> na;
+    for (size_t i = 0; i < na && i < 100000; ++i) {
+        Award a;
+        is >> a.year >> a.owner;
+        if (!rstr(is, a.title) || !rstr(is, a.winner) || !rstr(is, a.detail)) break;
+        g.awardLog.push_back(a);
     }
     g.office = clampi(g.office, 0, NOFFICE - 1);
     g.trend = clampi(g.trend, 0, 7);
@@ -1457,6 +1590,7 @@ void goBack() {
         case SC_MAIN: setScreen(SC_PAUSE); break;
         case SC_PAUSE: setScreen(retScreen); break;
         case SC_PLATFORM: setScreen(retScreen); break;
+        case SC_AWARDS: case SC_HALL: setScreen(SC_MAIN); break;
         case SC_LAUNCH:
             if (resIdx >= 0) resIdx = -1;
             else setScreen(SC_MAIN);
@@ -1471,7 +1605,7 @@ void topBar() {
     fillRect(0, 63, W, 1, C_BORDER);
     if (screen != SC_MAIN) {
         if (button({8, 8, 130, 48}, "< Назад")) goBack();
-        const char* titles[] = {"", "", "Конструктор", "Запуск", "Офис", "Наука", "Рынки", "Статистика", "", "", "Платформа"};
+        const char* titles[] = {"", "", "Конструктор", "Запуск", "Офис", "Наука", "Рынки", "Статистика", "", "", "Платформа", "Итоги", "Награды"};
         drawText(titles[screen], 150, 25, 2, C_DIM);
     } else {
         drawText(fitText(G.company, 2, 310), 16, 25, 2, C_ACC);
@@ -1903,6 +2037,117 @@ void scrPlatform() {
     drawText("Своя платформа: этапы разработки. Качество складывается из выбранных подходов.", 24, 76, 2, C_ACC);
     projectPanel(16, "Процессор", PRJ_CPU, CPU_STAGES, CPU_NAMES, "Процессор");
     projectPanel(652, "Операционная система", PRJ_OS, OS_STAGES, OS_NAMES, "ОС");
+}
+
+void scrAwards() {
+    const float T = ceremonyT;
+    const float listStart = 4.2f;
+    const int n = (int)yearAwards.size();
+    const float doneT = listStart + n * 0.6f + 0.6f;
+    panel(180, 96, 920, 600, "Итоги " + std::to_string(awardYearNo) + " года");
+
+    if (T < listStart) {
+        // Церемония: топ-3 компании по прибыли поднимаются по очереди — 3-е, 2-е, 1-е
+        double pp = 0;
+        int cnt = (int)G.histInc.size();
+        for (int i = std::max(0, cnt - 12); i < cnt; ++i) pp += G.histInc[(size_t)i] - G.histExp[(size_t)i];
+        std::vector<std::pair<double, std::string>> pods;
+        pods.push_back(std::make_pair(pp, G.company));
+        for (int i = 0; i < NCOMP; ++i) pods.push_back(std::make_pair(G.rivalProfit[i], std::string(COMP_NAMES[i])));
+        std::sort(pods.begin(), pods.end(),
+                  [](const std::pair<double, std::string>& x, const std::pair<double, std::string>& y) {
+                      return x.first > y.first;
+                  });
+        drawTextCShadow("Топ-3 компании года", W / 2, 116, 3, C_ACC);
+        fillRect(260, 540, 760, 2, C_BORDER);
+        const int cxOf[3] = {640, 400, 880};   // 1-е, 2-е, 3-е место
+        const int tgt[3] = {240, 180, 130};
+        const float st[3] = {2.2f, 1.1f, 0.0f};  // момент начала подъёма
+        const Col medal[3] = {{236, 190, 60, 255}, {190, 200, 215, 255}, {200, 130, 70, 255}};
+        for (int pl = 0; pl < 3 && pl < (int)pods.size(); ++pl) {
+            float tt = clampd((T - st[pl]) / 0.9f, 0.0f, 1.0f);
+            float e = 1.0f - (1.0f - tt) * (1.0f - tt) * (1.0f - tt);
+            int h = (int)(tgt[pl] * e);
+            int cx = cxOf[pl];
+            if (h > 0) {
+                fillRound({cx - 80, 540 - h, 160, h}, 8, medal[pl]);
+                fillRect(cx - 80, 540 - h, 160, 6, shade(medal[pl], 1.25));
+            }
+            if (tt >= 1.0f) {
+                bool me = pods[(size_t)pl].second == G.company;
+                drawTextCShadow(std::to_string(pl + 1) + " место", cx, 550, 2, C_TEXT);
+                drawTextC(fitText(pods[(size_t)pl].second, 2, 300), cx, 540 - tgt[pl] - 60, 2, me ? C_YEL : C_TEXT);
+                double v = pods[(size_t)pl].first;
+                drawTextC(fmtMoney(v), cx, 540 - tgt[pl] - 34, 2, v >= 0 ? C_GREEN : C_RED);
+                if (pl == 0) {  // пульсирующая рамка у победителя
+                    int pulse = (int)(3.0 + 2.0 * std::sin(uiTime * 5.0));
+                    drawRect({cx - 80 - pulse, 540 - tgt[0] - pulse, 160 + 2 * pulse, tgt[0] + 2 * pulse}, C_YEL, 2);
+                }
+            }
+        }
+    } else {
+        // Список наград: появляется по одной, каждая въезжает справа
+        if (n == 0) drawTextC("В этом году наград нет", W / 2, 320, 3, C_DIM);
+        for (int i = 0; i < n; ++i) {
+            float rt = listStart + i * 0.6f;
+            if (T < rt) break;
+            float e = clampd((T - rt) / 0.35f, 0.0f, 1.0f);
+            e = 1.0f - (1.0f - e) * (1.0f - e);
+            int dx = (int)((1.0f - e) * 220.0f);
+            const Award& a = yearAwards[(size_t)i];
+            int y = 150 + i * 66;
+            fillRound({212 + dx, y, 856, 58}, 10, C_PANEL2);
+            drawText(a.title, 232 + dx, y + 8, 2, C_YEL);
+            drawText(fitText(a.winner, 2, 500), 232 + dx, y + 32, 2, C_TEXT);
+            drawTextR(fitText(a.detail, 2, 380), 1048 + dx, y + 32, 2, C_DIM);
+        }
+    }
+
+    if (T < doneT) {
+        if (button({560, 636, 200, 46}, "Пропустить")) ceremonyT = 1000.0f;
+    } else {
+        if (button({340, 636, 200, 46}, "История наград")) setScreen(SC_HALL);
+        if (button({560, 636, 200, 46}, "Продолжить", true, true)) setScreen(SC_MAIN);
+    }
+}
+
+void scrHall() {
+    panel(16, 76, 760, 620, "История наград");
+    SDL_Rect view = {28, 124, 736, 564};
+    beginArea(9, view);
+    int sy = scr(9);
+    int rows = (int)G.awardLog.size();
+    for (int j = 0; j < rows; ++j) {
+        const Award& a = G.awardLog[(size_t)(rows - 1 - j)];  // новые сверху
+        SDL_Rect r = {view.x, view.y + j * 70 - sy, view.w - 10, 62};
+        fillRound(r, 8, a.owner < 0 ? shade(C_BTNSEL, 0.45) : C_PANEL2);
+        drawText(std::to_string(a.year) + ": " + a.title, r.x + 12, r.y + 8, 2, a.owner < 0 ? C_YEL : C_TEXT);
+        drawText(fitText(a.winner + " — " + a.detail, 2, r.w - 24), r.x + 12, r.y + 34, 2, C_DIM);
+    }
+    if (rows == 0) drawText("Наград пока нет. Они вручаются в конце года.", view.x + 12, view.y + 10, 2, C_DIM);
+    endArea(rows * 70);
+
+    // Рейтинг: компания и конкуренты, число наград и прибыль за текущий год
+    panel(796, 76, 468, 620, "Рейтинг компаний");
+    int cnt[NCOMP + 1] = {};
+    for (size_t i = 0; i < G.awardLog.size(); ++i) cnt[G.awardLog[i].owner + 1]++;
+    double pp = 0;
+    int n = (int)G.histInc.size();
+    for (int i = std::max(0, n - 12); i < n; ++i) pp += G.histInc[(size_t)i] - G.histExp[(size_t)i];
+    SDL_Rect rv = {812, 124, 436, 564};
+    beginArea(10, rv);
+    int rsy = scr(10);
+    for (int k = 0; k <= NCOMP; ++k) {
+        int y = rv.y + k * 66 - rsy;
+        bool me = k == 0;
+        SDL_Rect rr = {rv.x, y, rv.w - 10, 60};
+        fillRound(rr, 10, me ? shade(C_BTNSEL, 0.45) : C_PANEL2);
+        drawText(fitText(me ? G.company : std::string(COMP_NAMES[k - 1]), 2, 280), rr.x + 12, y + 8, 2, me ? C_YEL : C_TEXT);
+        drawText("Наград: " + std::to_string(cnt[k]), rr.x + 12, y + 34, 2, C_DIM);
+        double pr = me ? pp : G.rivalProfit[k - 1];
+        drawTextR(fmtMoney(pr), rr.x + rr.w - 12, y + 34, 2, pr >= 0 ? C_GREEN : C_RED);
+    }
+    endArea((NCOMP + 1) * 66);
 }
 
 void salesChart(SDL_Rect r, const Product& p) {
@@ -2369,7 +2614,7 @@ void scrStats() {
 void scrPause() {
     fillRect(0, 0, W, H, {0, 0, 0, 150});
     panel(340, 70, 600, 600, "");
-    drawTextC("Пауза", W / 2, 92, 4, C_ACC);
+    drawTextCShadow("Пауза", W / 2, 92, 4, C_ACC);
     drawText("Громкость", 380, 172, 2, C_TEXT);
     if (button({540, 156, 56, 52}, "-", A.vol > 0.001f)) A.vol = std::max(0.0f, A.vol - 0.1f);
     progressBar({606, 172, 200, 20}, A.vol, C_ACC);
@@ -2389,14 +2634,16 @@ void scrPause() {
     if (button({440, y, 400, 60}, "Новая игра")) { newName = ""; setScreen(SC_NEW); }
     y += 72;
     if (button({440, y, 400, 60}, "Выход")) running = false;
+    y += 72;
+    if (button({440, y, 400, 60}, "Награды и рейтинг")) setScreen(SC_HALL);
     if (savePath.empty()) drawTextC("Сохранение недоступно на этом устройстве", W / 2, 640, 2, C_RED);
     else drawTextC("A - выбор, B - назад", W / 2, 640, 2, C_DIM);
 }
 
 void scrNew() {
-    fillRect(0, 0, W, H, C_BG);
+    fillGradV({0, 0, W, H}, {26, 32, 52, 255}, {12, 15, 24, 255});
     for (int i = 0; i < 24; ++i) fillRect((i * 97 + (int)(uiTime * 20)) % W, (i * 53) % H, 3, 3, C_BORDER);
-    drawTextC("ДЕВАЙС-КОРП", W / 2, 40, 7, C_ACC);
+    drawTextCShadow("ДЕВАЙС-КОРП", W / 2, 40, 7, C_ACC);
     drawTextC("Симулятор компании по разработке электроники", W / 2, 110, 2, C_DIM);
     drawText("Название компании", 340, 168, 2, C_TEXT);
     SDL_Rect f = {340, 192, 600, 60};
@@ -2440,7 +2687,7 @@ void scrNew() {
 }
 
 void scrOver() {
-    fillRect(0, 0, W, H, C_BG);
+    fillGradV({0, 0, W, H}, {26, 32, 52, 255}, {12, 15, 24, 255});
     drawTextC("БАНКРОТСТВО", W / 2, 120, 6, C_RED);
     drawTextC("Компания «" + G.company + "» не смогла расплатиться с долгами.", W / 2, 230, 2, C_TEXT);
     drawTextC("Прожито дней: " + std::to_string(G.day) + ",  устройств: " + std::to_string(G.products.size()) +
@@ -2465,6 +2712,8 @@ void renderFrame() {
                 case SC_MAIN: scrMain(); break;
                 case SC_DESIGN: scrDesign(); break;
                 case SC_PLATFORM: scrPlatform(); break;
+                case SC_AWARDS: scrAwards(); break;
+                case SC_HALL: scrHall(); break;
                 case SC_LAUNCH: scrLaunch(); break;
                 case SC_OFFICE: scrOffice(); break;
                 case SC_RESEARCH: scrResearch(); break;
@@ -2679,6 +2928,7 @@ int main(int argc, char* argv[]) {
         last = now;
         if (dt > 0.1f) dt = 0.1f;
         uiTime += dt;
+        ceremonyT += dt;
         if (toastT > 0) toastT -= dt;
         if (resIdx >= 0) resT += dt;
 
@@ -2688,13 +2938,13 @@ int main(int argc, char* argv[]) {
             uiStick(std::fabs(ly) > std::fabs(ry) ? ly : ry, dt);
         }
 
-        bool simRunning = screen != SC_NEW && screen != SC_OVER && screen != SC_PAUSE && G.speed > 0 && resIdx < 0;
+        bool simRunning = screen != SC_NEW && screen != SC_OVER && screen != SC_PAUSE && screen != SC_AWARDS && G.speed > 0 && resIdx < 0;
         if (simRunning) {
             const float mult[4] = {0.0f, 1.0f, 2.0f, 4.0f};
             float perDay = 1.0f / (1.5f * mult[G.speed]);
             dayTimer += dt;
             int guard = 0;
-            while (dayTimer >= perDay && guard < 20 && screen != SC_OVER) {
+            while (dayTimer >= perDay && guard < 20 && screen != SC_OVER && screen != SC_AWARDS) {
                 dayTimer -= perDay;
                 tickDay();
                 ++guard;
